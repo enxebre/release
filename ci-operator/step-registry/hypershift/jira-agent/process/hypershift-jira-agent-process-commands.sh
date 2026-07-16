@@ -395,7 +395,7 @@ while IFS= read -r line; do
   # Git push uses fork token (configured via credential helper), gh CLI uses upstream token (GITHUB_TOKEN env var)
   FORK_CONTEXT="IMPORTANT: You are working in a fork (hypershift-community/hypershift). Git push is pre-configured to work with the fork. After creating commits on your feature branch, push the branch to origin. Do NOT create a Pull Request - the PR will be created in a subsequent automated step after code review. SECURITY: Do NOT run commands that reveal git credentials like 'git remote -v' or 'git remote get-url origin'. ${SUBAGENT_PROMPT}"
 
-  set +e  # Don't exit on error for individual issues
+  set +eo pipefail  # Don't exit on error for individual issues; disable pipefail so tee doesn't mask claude's exit code
   echo "Starting Claude processing with streaming output..."
   claude -p "$ISSUE_KEY origin --ci. $FORK_CONTEXT" \
     --system-prompt "$SKILL_CONTENT" \
@@ -407,8 +407,8 @@ while IFS= read -r line; do
     --output-format stream-json \
     2> "/tmp/claude-${ISSUE_KEY}-output.log" \
     | tee "/tmp/claude-${ISSUE_KEY}-output.json"
-  EXIT_CODE=$?
-  set -e
+  EXIT_CODE=${PIPESTATUS[0]}
+  set -eo pipefail
   jq -j 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text // empty' "/tmp/claude-${ISSUE_KEY}-output.json" > "${SHARED_DIR}/claude-${ISSUE_KEY}-output-text.txt" 2>/dev/null || true
   jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | "\(.name): \(.input | keys | join(", "))"' "/tmp/claude-${ISSUE_KEY}-output.json" 2>/dev/null | sort | uniq -c | sort -rn > "${SHARED_DIR}/claude-${ISSUE_KEY}-output-tools.txt" 2>/dev/null || true
   jq -r 'select(.type == "user") | .tool_use_result | select(type == "string") | select(startswith("Error:")) | gsub("\n"; "⏎")' "/tmp/claude-${ISSUE_KEY}-output.json" 2>/dev/null | sort | uniq -c | sort -rn | sed 's/⏎/\n/g' > "${SHARED_DIR}/claude-${ISSUE_KEY}-output-errors.txt" 2>/dev/null || true
@@ -462,7 +462,7 @@ while IFS= read -r line; do
 
       REVIEW_PROMPT="/code-review:pre-commit-review --language go --profile hypershift"
 
-      set +e
+      set +eo pipefail
       claude -p "$REVIEW_PROMPT" \
         --plugin-dir "${REVIEW_PLUGIN_DIR}" \
         --append-system-prompt "SECURITY: Do NOT run commands that reveal git credentials like 'git remote -v' or 'git remote get-url origin'. ${SUBAGENT_PROMPT}" \
@@ -474,8 +474,8 @@ while IFS= read -r line; do
         --output-format stream-json \
         2> "/tmp/claude-${ISSUE_KEY}-review.log" \
         | tee "/tmp/claude-${ISSUE_KEY}-review.json"
-      REVIEW_EXIT_CODE=$?
-      set -e
+      REVIEW_EXIT_CODE=${PIPESTATUS[0]}
+      set -eo pipefail
 
       jq -j 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text // empty' "/tmp/claude-${ISSUE_KEY}-review.json" > "${SHARED_DIR}/claude-${ISSUE_KEY}-review-text.txt" 2>/dev/null || true
       jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | "\(.name): \(.input | keys | join(", "))"' "/tmp/claude-${ISSUE_KEY}-review.json" 2>/dev/null | sort | uniq -c | sort -rn > "${SHARED_DIR}/claude-${ISSUE_KEY}-review-tools.txt" 2>/dev/null || true
@@ -538,7 +538,7 @@ IMPORTANT:
 - SECURITY: Do NOT run commands that reveal git credentials like 'git remote -v' or 'git remote get-url origin'.
 - ${SUBAGENT_PROMPT}"
 
-        set +e
+        set +eo pipefail
         claude -p "$FIX_PROMPT" \
           --allowedTools "Bash Read Write Edit Grep Glob" \
           --max-turns 75 \
@@ -548,8 +548,8 @@ IMPORTANT:
           --output-format stream-json \
           2> "/tmp/claude-${ISSUE_KEY}-fix.log" \
           | tee "/tmp/claude-${ISSUE_KEY}-fix.json"
-        FIX_EXIT_CODE=$?
-        set -e
+        FIX_EXIT_CODE=${PIPESTATUS[0]}
+        set -eo pipefail
 
         # Extract fix phase output for report
         jq -j 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text // empty' "/tmp/claude-${ISSUE_KEY}-fix.json" > "${SHARED_DIR}/claude-${ISSUE_KEY}-fix-text.txt" 2>/dev/null || true
@@ -630,7 +630,7 @@ IMPORTANT:
 - SECURITY: Do NOT run commands that reveal git credentials like 'git remote -v' or 'git remote get-url origin'.
 - ${SUBAGENT_PROMPT}"
 
-      set +e
+      set +eo pipefail
       claude -p "$PR_PROMPT" \
         --allowedTools "Bash Read Grep Glob" \
         --max-turns 15 \
@@ -640,8 +640,8 @@ IMPORTANT:
         --output-format stream-json \
         2> "/tmp/claude-${ISSUE_KEY}-pr.log" \
         | tee "/tmp/claude-${ISSUE_KEY}-pr.json"
-      PR_EXIT_CODE=$?
-      set -e
+      PR_EXIT_CODE=${PIPESTATUS[0]}
+      set -eo pipefail
 
       jq -j 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text // empty' "/tmp/claude-${ISSUE_KEY}-pr.json" > "${SHARED_DIR}/claude-${ISSUE_KEY}-pr-text.txt" 2>/dev/null || true
       jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | "\(.name): \(.input | keys | join(", "))"' "/tmp/claude-${ISSUE_KEY}-pr.json" 2>/dev/null | sort | uniq -c | sort -rn > "${SHARED_DIR}/claude-${ISSUE_KEY}-pr-tools.txt" 2>/dev/null || true
